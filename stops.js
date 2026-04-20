@@ -1,4 +1,4 @@
-window.stops = {
+module.exports = {
 "101":"Van Cortlandt Park-242 St",
 "103":"238 St",
 "104":"231 St",

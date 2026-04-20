@@ -256,26 +256,18 @@
 <body>
   <div id="cards-container"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.2.5/dist/protobuf.min.js"></script>
-  <script src="./stops.js"></script>
-
   <script>
-    // Extract base station ID without N/S suffix
     function getStopBase(stopId) {
       if (!stopId) return null;
       const lastChar = stopId.slice(-1).toUpperCase();
-      if (lastChar === 'N' || lastChar === 'S') {
-        return stopId.slice(0, -1);
-      }
+      if (lastChar === 'N' || lastChar === 'S') return stopId.slice(0, -1);
       return stopId;
     }
 
-    // Parse a single station string (e.g., "D27:B;Q" or "D27N:B;Q")
     function parseStation(stationStr) {
       const [stationId, linesStr] = stationStr.split(':');
       const lines = linesStr ? linesStr.split(';').map(l => l.trim().toUpperCase()) : null;
 
-      // Check if station already has direction suffix
       const lastChar = stationId.slice(-1).toUpperCase();
       let stopIds;
       if (lastChar === 'N') {
@@ -283,87 +275,38 @@
       } else if (lastChar === 'S') {
         stopIds = { NORTHBOUND: null, SOUTHBOUND: stationId.toUpperCase() };
       } else {
-        // No direction suffix - use both
         const base = stationId.toUpperCase();
         stopIds = { NORTHBOUND: base + 'N', SOUTHBOUND: base + 'S' };
       }
 
       const baseId = getStopBase(stopIds.NORTHBOUND || stopIds.SOUTHBOUND);
-      const stationName = window.stops?.[baseId] || 'Subway';
-
-      return { stopIds, lines, stationName, baseId };
+      return { stopIds, lines, baseId };
     }
 
-    // Parse station param (supports multiple comma-separated stations)
     function parseStationParam() {
       const params = new URLSearchParams(window.location.search);
       const station = params.get('station');
-
-      if (!station) {
-        return [parseStation('D26')];
-      }
-
+      if (!station) return [parseStation('D26')];
       return station.split(',').map(s => parseStation(s.trim()));
     }
 
     const STATIONS = parseStationParam();
-
-    // Update page title with first station name
-    document.title = STATIONS[0].stationName;
-    document.querySelector('meta[property="og:title"]').content = STATIONS[0].stationName + ' Subway';
-
-    const FEED_URLS = {
-      '123456': 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs',
-      ACE: 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace',
-      BDFM: 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm',
-      G: 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-g',
-      JZ: 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-jz',
-      L: 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l',
-      NQRW: 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw',
-      SI: 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-si'
-    };
-
     const REFRESH_INTERVAL = 30000;
 
-    const GTFS_RT_PROTO = `
-      syntax = "proto2";
-      package transit_realtime;
-      message FeedMessage {
-        required FeedHeader header = 1;
-        repeated FeedEntity entity = 2;
+    function getAllStopIds() {
+      const ids = [];
+      for (const station of STATIONS) {
+        if (station.stopIds.NORTHBOUND) ids.push(station.stopIds.NORTHBOUND);
+        if (station.stopIds.SOUTHBOUND) ids.push(station.stopIds.SOUTHBOUND);
       }
-      message FeedHeader {
-        required string gtfs_realtime_version = 1;
-        optional uint64 timestamp = 2;
-      }
-      message FeedEntity {
-        required string id = 1;
-        optional TripUpdate trip_update = 3;
-      }
-      message TripUpdate {
-        optional TripDescriptor trip = 1;
-        repeated StopTimeUpdate stop_time_update = 2;
-      }
-      message TripDescriptor {
-        optional string trip_id = 1;
-        optional string route_id = 5;
-      }
-      message StopTimeUpdate {
-        optional string stop_id = 4;
-        optional StopTimeEvent arrival = 2;
-      }
-      message StopTimeEvent {
-        optional int64 time = 2;
-      }
-    `;
+      return ids;
+    }
 
-    let FeedMessage = null;
-
-    // Create HTML for a station card
     function createStationCard(station, index) {
+      const name = station.stationName || station.baseId;
       return `
         <div class="card" id="card-${index}">
-          <h1 class="title">${station.stationName}</h1>
+          <h1 class="title" id="title-${index}">${name}</h1>
           <div class="content" id="content-${index}" style="display: none;">
             <div class="row" id="row-${index}-manhattan">
               <div class="direction">Manhattan</div>
@@ -384,87 +327,61 @@
       `;
     }
 
-    async function init() {
-      try {
-        const root = protobuf.parse(GTFS_RT_PROTO).root;
-        FeedMessage = root.lookupType('transit_realtime.FeedMessage');
+    function init() {
+      const container = document.getElementById('cards-container');
+      container.innerHTML = STATIONS.map((station, i) => createStationCard(station, i)).join('');
 
-        // Create cards for all stations
-        const container = document.getElementById('cards-container');
-        container.innerHTML = STATIONS.map((station, i) => createStationCard(station, i)).join('');
-
-        await updateDisplay();
-        setInterval(updateDisplay, REFRESH_INTERVAL);
-        document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'visible') updateDisplay();
-        });
-      } catch (err) {
-        console.error('Failed to initialize:', err.message);
-      }
-    }
-
-    async function fetchFeed(url) {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const buffer = await response.arrayBuffer();
-      return FeedMessage.decode(new Uint8Array(buffer));
-    }
-
-    function getArrivalsFromFeed(feed, stopId, routeFilter) {
-      const now = Date.now();
-      const arrivals = [];
-      for (const entity of feed.entity) {
-        if (!entity.tripUpdate) continue;
-        const routeId = entity.tripUpdate.trip?.routeId;
-        if (routeFilter && !routeFilter.includes(routeId)) continue;
-        for (const stu of entity.tripUpdate.stopTimeUpdate || []) {
-          if (stu.stopId !== stopId) continue;
-          const arrivalTime = stu.arrival?.time;
-          if (!arrivalTime) continue;
-          const arrivalMs = Number(arrivalTime) * 1000;
-          const minutes = Math.floor((arrivalMs - now) / 60000);
-          if (minutes >= 0 && minutes < 90) {
-            arrivals.push({ route: routeId === 'FS' ? 'S' : routeId, minutes });
-          }
-        }
-      }
-      return arrivals;
+      updateDisplay();
+      setInterval(updateDisplay, REFRESH_INTERVAL);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') updateDisplay();
+      });
     }
 
     async function updateDisplay() {
       try {
-        // Fetch all feeds in parallel
-        const feeds = await Promise.all(
-          Object.values(FEED_URLS).map(url => fetchFeed(url))
-        );
+        const stopIds = getAllStopIds();
+        const response = await fetch(`/api/arrivals?stations=${stopIds.join(',')}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
 
-        // Update each station
+        // Resolve station names from API on first load
+        if (data.names) {
+          STATIONS.forEach((station, index) => {
+            const name = data.names[station.baseId];
+            if (name && !station.stationName) {
+              station.stationName = name;
+              document.getElementById(`title-${index}`).textContent = name;
+              if (index === 0) {
+                document.title = name;
+                document.querySelector('meta[property="og:title"]').content = name + ' Subway';
+              }
+            }
+          });
+        }
+
         STATIONS.forEach((station, index) => {
-          updateStation(station, index, feeds);
+          updateStation(station, index, data.arrivals);
         });
       } catch (err) {
-        console.error('Error fetching feed:', err);
+        console.error('Error fetching arrivals:', err);
       }
     }
 
-    function updateStation(station, index, feeds) {
+    function updateStation(station, index, allArrivals) {
       const { stopIds, lines } = station;
-      const routeFilter = lines || null;
+      const now = Math.floor(Date.now() / 1000);
 
-      // Get arrivals from all feeds for both directions
-      const northArrivals = [];
-      const southArrivals = [];
+      function toMinutes(arrivals) {
+        return arrivals
+          .filter(a => !lines || lines.includes(a.route))
+          .map(a => ({ route: a.route, minutes: Math.floor((a.time - now) / 60) }))
+          .filter(a => a.minutes >= 0 && a.minutes < 90);
+      }
 
-      feeds.forEach(feed => {
-        if (stopIds.NORTHBOUND) {
-          northArrivals.push(...getArrivalsFromFeed(feed, stopIds.NORTHBOUND, routeFilter));
-        }
-        if (stopIds.SOUTHBOUND) {
-          southArrivals.push(...getArrivalsFromFeed(feed, stopIds.SOUTHBOUND, routeFilter));
-        }
-      });
+      const northArrivals = stopIds.NORTHBOUND ? toMinutes(allArrivals[stopIds.NORTHBOUND] || []) : [];
+      const southArrivals = stopIds.SOUTHBOUND ? toMinutes(allArrivals[stopIds.SOUTHBOUND] || []) : [];
 
-      // Combine all arrivals per direction, sorted by time
       const manhattan = northArrivals
         .filter(a => a.route !== 'S')
         .sort((a, b) => a.minutes - b.minutes).slice(0, 3);
