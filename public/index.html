@@ -340,7 +340,8 @@
 
     function init() {
       const container = document.getElementById('cards-container');
-      container.innerHTML = STATIONS.map((station, i) => createStationCard(station, i)).join('');
+      container.innerHTML = STATIONS.map((station, i) => createStationCard(station, i)).join('')
+        + '<div style="text-align:center;padding-top:1vh;font-size:1.2vw;color:#ccc"><a href="/builder.html" style="color:inherit;text-decoration:underline;text-underline-offset:3px">build a url</a></div>';
 
       updateDisplay();
       setInterval(updateDisplay, REFRESH_INTERVAL);

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>URL Builder — Subway Time</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #fafafa;
+      padding: 40px 24px;
+      color: #222;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 32px;
+      color: #444;
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #999;
+      margin-bottom: 10px;
+    }
+
+    /* Search */
+    #search {
+      width: 100%;
+      max-width: 480px;
+      padding: 12px 16px;
+      font-size: 16px;
+      border: 1.5px solid #ddd;
+      border-radius: 10px;
+      outline: none;
+      background: #fff;
+    }
+    #search:focus { border-color: #aaa; }
+
+    #results {
+      margin-top: 8px;
+      max-width: 480px;
+      background: #fff;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      overflow: hidden;
+      display: none;
+    }
+
+    .result-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .result-item:last-child { border-bottom: none; }
+    .result-item:hover { background: #f5f5f5; }
+
+    .result-name { flex: 1; font-size: 15px; }
+    .result-id { font-size: 12px; color: #aaa; font-family: monospace; }
+
+    /* Line badges */
+    .badges { display: flex; gap: 4px; flex-wrap: wrap; }
+    .badge {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      font-size: 11px;
+      font-weight: bold;
+      color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .badge.line-1,.badge.line-2,.badge.line-3 { background:#EE352E; }
+    .badge.line-4,.badge.line-5,.badge.line-6 { background:#00933C; }
+    .badge.line-7 { background:#B933AD; }
+    .badge.line-A,.badge.line-C,.badge.line-E { background:#0039A6; }
+    .badge.line-B,.badge.line-D,.badge.line-F,.badge.line-M { background:#FF6319; }
+    .badge.line-G { background:#6CBE45; }
+    .badge.line-J,.badge.line-Z { background:#996633; }
+    .badge.line-L { background:#A7A9AC; }
+    .badge.line-N,.badge.line-Q,.badge.line-R,.badge.line-W { background:#FCCC0A; color:#000; }
+    .badge.line-S { background:#808183; }
+    .badge.line-SI { background:#0039A6; font-size:9px; }
+
+    /* Selected stations */
+    #selected { margin-top: 32px; }
+    #selected-list { display: flex; flex-direction: column; gap: 12px; max-width: 560px; }
+
+    .selected-card {
+      background: #fff;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .selected-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .selected-name { font-size: 15px; font-weight: 600; flex: 1; }
+    .selected-id { font-size: 12px; color: #aaa; font-family: monospace; }
+
+    .remove-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #bbb;
+      font-size: 18px;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .remove-btn:hover { color: #888; }
+
+    .controls { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+
+    .control-group { display: flex; flex-direction: column; gap: 6px; }
+
+    .control-group label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #999; }
+
+    .dir-buttons { display: flex; gap: 4px; }
+    .dir-btn {
+      padding: 6px 12px;
+      border: 1.5px solid #ddd;
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #555;
+    }
+    .dir-btn.active { background: #222; color: #fff; border-color: #222; }
+
+    .line-filter { display: flex; gap: 4px; flex-wrap: wrap; }
+    .line-toggle {
+      cursor: pointer;
+      opacity: 0.35;
+      transition: opacity 0.1s;
+    }
+    .line-toggle.active { opacity: 1; }
+
+    /* Output */
+    #output { margin-top: 32px; max-width: 560px; }
+
+    #url-display {
+      background: #fff;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-family: monospace;
+      font-size: 14px;
+      word-break: break-all;
+      color: #333;
+      min-height: 50px;
+    }
+
+    .output-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+    .action-btn {
+      padding: 9px 18px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .action-btn.primary { background: #222; color: #fff; }
+    .action-btn.primary:hover { background: #444; }
+    .action-btn.secondary { background: #eee; color: #444; }
+    .action-btn.secondary:hover { background: #ddd; }
+    .action-btn:disabled { opacity: 0.4; cursor: default; }
+
+    .empty-hint { color: #bbb; font-size: 14px; font-style: italic; }
+  </style>
+</head>
+<body>
+  <h1>Subway Time — URL Builder</h1>
+
+  <div class="section-label">Search for a station</div>
+  <input type="text" id="search" placeholder="e.g. Prospect Park, 14 St, Atlantic Av…" autocomplete="off">
+  <div id="results"></div>
+
+  <div id="selected" style="display:none">
+    <div class="section-label" style="margin-bottom:10px">Selected stations</div>
+    <div id="selected-list"></div>
+  </div>
+
+  <div id="output" style="display:none">
+    <div class="section-label" style="margin-bottom:10px">URL</div>
+    <div id="url-display"></div>
+    <div class="output-actions">
+      <button class="action-btn primary" id="copy-btn">Copy</button>
+      <button class="action-btn secondary" id="open-btn">Open</button>
+    </div>
+  </div>
+
+  <script src="./station-data.js"></script>
+  <script>
+    // Build searchable index: [{id, name, lines}]
+    const index = Object.entries(window.stationData).map(([id, [name, lines]]) => ({
+      id,
+      name,
+      lines,
+    }));
+
+    // State: [{id, name, lines, dir, lineFilter}]
+    const selected = [];
+
+    // --- Search ---
+
+    const searchEl = document.getElementById('search');
+    const resultsEl = document.getElementById('results');
+
+    searchEl.addEventListener('input', () => {
+      const q = searchEl.value.trim().toLowerCase();
+      if (!q) { resultsEl.style.display = 'none'; return; }
+
+      const matches = index
+        .filter(s => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q))
+        .slice(0, 10);
+
+      if (!matches.length) { resultsEl.style.display = 'none'; return; }
+
+      resultsEl.innerHTML = matches.map(s => `
+        <div class="result-item" data-id="${s.id}">
+          <div class="result-name">${s.name}</div>
+          <span class="result-id">${s.id}</span>
+          <div class="badges">${renderBadges(s.lines)}</div>
+        </div>
+      `).join('');
+      resultsEl.style.display = 'block';
+    });
+
+    resultsEl.addEventListener('click', e => {
+      const item = e.target.closest('.result-item');
+      if (!item) return;
+      const id = item.dataset.id;
+      addStation(id);
+      searchEl.value = '';
+      resultsEl.style.display = 'none';
+    });
+
+    document.addEventListener('click', e => {
+      if (!searchEl.contains(e.target) && !resultsEl.contains(e.target)) {
+        resultsEl.style.display = 'none';
+      }
+    });
+
+    // --- Station management ---
+
+    function addStation(id) {
+      if (selected.find(s => s.id === id)) return;
+      selected.push({
+        id,
+        name: window.stationData[id][0],
+        lines: window.stationData[id][1] || [],
+        dir: 'both',
+        lineFilter: [],
+      });
+      render();
+    }
+
+    function removeStation(id) {
+      const i = selected.findIndex(s => s.id === id);
+      if (i !== -1) selected.splice(i, 1);
+      render();
+    }
+
+    function setDir(id, dir) {
+      const s = selected.find(s => s.id === id);
+      if (s) s.dir = dir;
+      render();
+    }
+
+    function toggleLine(id, line) {
+      const s = selected.find(s => s.id === id);
+      if (!s) return;
+      const i = s.lineFilter.indexOf(line);
+      if (i === -1) s.lineFilter.push(line);
+      else s.lineFilter.splice(i, 1);
+      render();
+    }
+
+    // --- Rendering ---
+
+    function renderBadges(lines) {
+      return lines.map(l => `<div class="badge line-${l}">${l}</div>`).join('');
+    }
+
+    function stationToParam(s) {
+      const base = s.id;
+      const suffix = s.dir === 'N' ? 'N' : s.dir === 'S' ? 'S' : '';
+      const lineStr = s.lineFilter.length ? ':' + s.lineFilter.join(';') : '';
+      return base + suffix + lineStr;
+    }
+
+    function buildUrl() {
+      if (!selected.length) return '';
+      const param = selected.map(stationToParam).join(',');
+      return `${location.origin}/?station=${param}`;
+    }
+
+    function render() {
+      const listEl = document.getElementById('selected-list');
+      const selectedSection = document.getElementById('selected');
+      const outputSection = document.getElementById('output');
+
+      if (!selected.length) {
+        selectedSection.style.display = 'none';
+        outputSection.style.display = 'none';
+        return;
+      }
+
+      selectedSection.style.display = 'block';
+      outputSection.style.display = 'block';
+
+      listEl.innerHTML = selected.map(s => `
+        <div class="selected-card">
+          <div class="selected-header">
+            <div class="selected-name">${s.name}</div>
+            <span class="selected-id">${s.id}</span>
+            <button class="remove-btn" data-remove="${s.id}" title="Remove">×</button>
+          </div>
+          <div class="controls">
+            <div class="control-group">
+              <label>Direction</label>
+              <div class="dir-buttons">
+                <button class="dir-btn ${s.dir==='both'?'active':''}" data-dir-id="${s.id}" data-dir="both">Both</button>
+                <button class="dir-btn ${s.dir==='N'?'active':''}" data-dir-id="${s.id}" data-dir="N">↑ North</button>
+                <button class="dir-btn ${s.dir==='S'?'active':''}" data-dir-id="${s.id}" data-dir="S">↓ South</button>
+              </div>
+            </div>
+            ${s.lines.length ? `
+            <div class="control-group">
+              <label>Filter lines <span style="font-weight:400;text-transform:none;letter-spacing:0">(all if none selected)</span></label>
+              <div class="line-filter">
+                ${s.lines.map(l => `
+                  <div class="badge line-toggle line-${l} ${s.lineFilter.includes(l)?'active':''}"
+                       data-toggle-id="${s.id}" data-line="${l}"
+                       style="width:28px;height:28px;font-size:13px;cursor:pointer">${l}</div>
+                `).join('')}
+              </div>
+            </div>` : ''}
+          </div>
+        </div>
+      `).join('');
+
+      // Event delegation
+      listEl.querySelectorAll('[data-remove]').forEach(btn => {
+        btn.addEventListener('click', () => removeStation(btn.dataset.remove));
+      });
+      listEl.querySelectorAll('[data-dir-id]').forEach(btn => {
+        btn.addEventListener('click', () => setDir(btn.dataset.dirId, btn.dataset.dir));
+      });
+      listEl.querySelectorAll('[data-toggle-id]').forEach(el => {
+        el.addEventListener('click', () => toggleLine(el.dataset.toggleId, el.dataset.line));
+      });
+
+      // URL output
+      const url = buildUrl();
+      document.getElementById('url-display').textContent = url;
+      document.getElementById('copy-btn').disabled = !url;
+      document.getElementById('open-btn').disabled = !url;
+    }
+
+    // --- Output actions ---
+
+    document.getElementById('copy-btn').addEventListener('click', () => {
+      navigator.clipboard.writeText(buildUrl()).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy', 1500);
+      });
+    });
+
+    document.getElementById('open-btn').addEventListener('click', () => {
+      window.open(buildUrl(), '_blank');
+    });
+  </script>
+</body>
+</html>

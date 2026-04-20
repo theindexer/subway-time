@@ -3,7 +3,7 @@ const compression = require("compression");
 const protobuf = require("protobufjs");
 const path = require("path");
 
-const stops = require("./stops");
+const stationData = require("./public/station-data");
 
 const app = express();
 app.use(compression());
@@ -139,7 +139,7 @@ app.get("/api/arrivals", (req, res) => {
   for (const id of stopIds) {
     arrivals[id] = arrivalsCache[id] || [];
     const base = getStopBase(id);
-    if (!names[base]) names[base] = stops[base] || null;
+    if (!names[base]) names[base] = stationData[base]?.[0] || null;
   }
 
   res.json({ arrivals, names, lastFetchTime: lastFetchTime?.toISOString() || null });
