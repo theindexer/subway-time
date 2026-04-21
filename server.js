@@ -134,6 +134,10 @@ function decodeFeedsToCache(feeds) {
 }
 
 const IGNORED_EFFECTS = new Set([5, 10]); // ADDITIONAL_SERVICE, NO_EFFECT (informational)
+const IGNORED_ALERT_IDS = new Set([
+  "lmm:planned_work:20534", // B: "Take the [A][C][D][Q] instead" — standing no-service notice
+  "lmm:planned_work:19872", // Z: "Take the [J] instead" — standing no-service notice
+]);
 
 function isActivePeriod(periods) {
   if (!periods?.length) return true; // no period = always active
@@ -149,6 +153,7 @@ function decodeAlerts(feed) {
   const alerts = {};
   for (const entity of feed.entity) {
     if (!entity.alert) continue;
+    if (IGNORED_ALERT_IDS.has(entity.id)) continue;
     if (!isActivePeriod(entity.alert.activePeriod)) continue;
     if (IGNORED_EFFECTS.has(entity.alert.effect)) continue;
     const header = entity.alert.headerText?.translation?.[0]?.text;
