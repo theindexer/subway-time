@@ -298,6 +298,7 @@
 
     const STATIONS = parseStationParam();
     const REFRESH_INTERVAL = 30000;
+    let lastUpdate = null;
 
     function getAllStopIds() {
       const ids = [];
@@ -338,7 +339,6 @@
       container.innerHTML = STATIONS.map((station, i) => createStationCard(station, i)).join('')
         + '<div style="text-align:center;padding-top:1vh;font-size:1.2vw;color:#ccc"><a href="/builder.html" style="color:inherit;text-decoration:underline;text-underline-offset:3px">build a url</a></div>';
 
-      let lastUpdate = null;
       async function maybeUpdate() {
         if (!lastUpdate || Date.now() - lastUpdate >= REFRESH_INTERVAL) {
           await updateDisplay();
