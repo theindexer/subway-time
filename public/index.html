@@ -192,11 +192,6 @@
 
     /* Portrait mode for phones */
     @media (max-width: 500px) and (orientation: portrait) {
-      html, body {
-        overflow: hidden;
-        height: 100vh;
-      }
-
       body {
         padding: 3vh 4vw 12vh;
       }
@@ -343,10 +338,19 @@
       container.innerHTML = STATIONS.map((station, i) => createStationCard(station, i)).join('')
         + '<div style="text-align:center;padding-top:1vh;font-size:1.2vw;color:#ccc"><a href="/builder.html" style="color:inherit;text-decoration:underline;text-underline-offset:3px">build a url</a></div>';
 
-      updateDisplay();
-      setInterval(updateDisplay, REFRESH_INTERVAL);
+      let lastUpdate = null;
+      async function maybeUpdate() {
+        if (!lastUpdate || Date.now() - lastUpdate >= REFRESH_INTERVAL) {
+          await updateDisplay();
+          lastUpdate = Date.now();
+        }
+      }
+      maybeUpdate();
+      setInterval(() => {
+        if (document.visibilityState === 'visible') maybeUpdate();
+      }, REFRESH_INTERVAL);
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') updateDisplay();
+        if (document.visibilityState === 'visible') maybeUpdate();
       });
     }
 
@@ -434,7 +438,7 @@
       renderRow(`row-${index}-franklin`, `arrivals-${index}-franklin`, data.franklin);
 
       document.getElementById(`updated-${index}`).textContent =
-        `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+        `Updated ${new Date(lastUpdate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
     }
 
     init();
