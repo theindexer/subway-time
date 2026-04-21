@@ -25,6 +25,7 @@ const PROTO_DEFINITION = `
   message FeedEntity {
     required string id = 1;
     optional TripUpdate trip_update = 3;
+    optional Alert alert = 5;
   }
   message TripUpdate {
     optional TripDescriptor trip = 1;
@@ -41,12 +42,36 @@ const PROTO_DEFINITION = `
   message StopTimeEvent {
     optional int64 time = 2;
   }
+  message TimeRange {
+    optional uint64 start = 1;
+    optional uint64 end = 2;
+  }
+  message Alert {
+    repeated TimeRange active_period = 1;
+    repeated EntitySelector informed_entity = 5;
+    optional int32 effect = 7;
+    optional TranslatedString header_text = 10;
+  }
+  message EntitySelector {
+    optional string route_id = 2;
+    optional string stop_id = 4;
+  }
+  message TranslatedString {
+    message Translation {
+      required string text = 1;
+      optional string language = 2;
+    }
+    repeated Translation translation = 1;
+  }
 `;
 
 const root = protobuf.parse(PROTO_DEFINITION).root;
 const FeedMessage = root.lookupType("transit_realtime.FeedMessage");
 
 // --- MTA feed URLs ---
+
+const ALERTS_URL =
+  "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts";
 
 const FEED_URLS = [
   "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
@@ -60,8 +85,10 @@ const FEED_URLS = [
 ];
 
 // --- In-memory cache ---
-// Shape: { "D26N": [ { route: "B", time: 1713500000 }, ... ], ... }
+// arrivalsCache shape: { "D26N": [ { route: "B", time: 1713500000 }, ... ], ... }
+// alertsCache shape:   { "B": ["No B trains between..."], ... }
 let arrivalsCache = {};
+let alertsCache = {};
 let lastFetchTime = null;
 
 async function fetchFeed(url) {
@@ -106,16 +133,57 @@ function decodeFeedsToCache(feeds) {
   return cache;
 }
 
-async function refreshCache() {
+const IGNORED_EFFECTS = new Set([5, 10]); // ADDITIONAL_SERVICE, NO_EFFECT (informational)
+
+function isActivePeriod(periods) {
+  if (!periods?.length) return true; // no period = always active
+  const now = Math.floor(Date.now() / 1000);
+  return periods.some(p => {
+    const start = Number(p.start) || 0;
+    const end = Number(p.end) || Infinity;
+    return now >= start && now <= end;
+  });
+}
+
+function decodeAlerts(feed) {
+  const alerts = {};
+  for (const entity of feed.entity) {
+    if (!entity.alert) continue;
+    if (!isActivePeriod(entity.alert.activePeriod)) continue;
+    if (IGNORED_EFFECTS.has(entity.alert.effect)) continue;
+    const header = entity.alert.headerText?.translation?.[0]?.text;
+    if (!header) continue;
+    const now = Math.floor(Date.now() / 1000);
+    const activePeriod = entity.alert.activePeriod.find(p => now <= (Number(p.end) || Infinity));
+    const start = activePeriod?.start ? Number(activePeriod.start) : null;
+    for (const sel of entity.alert.informedEntity || []) {
+      if (!sel.routeId) continue;
+      const route = sel.routeId === "FS" ? "S" : sel.routeId;
+      if (!alerts[route]) alerts[route] = [];
+      if (!alerts[route].find(a => a.text === header)) alerts[route].push({ text: header, start });
+    }
+  }
+  return alerts;
+}
+
+async function refreshArrivals() {
   try {
     const feeds = await Promise.all(FEED_URLS.map((url) => fetchFeed(url)));
     arrivalsCache = decodeFeedsToCache(feeds);
     lastFetchTime = new Date();
-    console.log(
-      `[${lastFetchTime.toISOString()}] Cache refreshed — ${Object.keys(arrivalsCache).length} stops`
-    );
+    console.log(`[${lastFetchTime.toISOString()}] Arrivals refreshed — ${Object.keys(arrivalsCache).length} stops`);
   } catch (err) {
-    console.error("Failed to refresh cache:", err.message);
+    console.error("Failed to refresh arrivals:", err.message);
+  }
+}
+
+async function refreshAlerts() {
+  try {
+    const feed = await fetchFeed(ALERTS_URL);
+    alertsCache = decodeAlerts(feed);
+    console.log(`[${new Date().toISOString()}] Alerts refreshed — ${Object.keys(alertsCache).length} routes with alerts`);
+  } catch (err) {
+    console.error("Failed to refresh alerts:", err.message);
   }
 }
 
@@ -133,16 +201,32 @@ app.get("/api/arrivals", (req, res) => {
     return res.status(400).json({ error: "stations parameter required" });
   }
 
-  const stopIds = stationsParam.split(",").map((s) => s.trim());
+  const stops = stationsParam.split(",").map((s) => {
+    const [id, lineStr] = s.trim().split(":");
+    const lines = lineStr ? lineStr.split(";") : null;
+    return { id, lines };
+  });
   const arrivals = {};
-  const names = {};
-  for (const id of stopIds) {
-    arrivals[id] = arrivalsCache[id] || [];
+  const stations = {};
+  const relevantRoutes = new Set();
+  for (const { id, lines } of stops) {
+    const raw = arrivalsCache[id] || [];
+    arrivals[id] = lines ? raw.filter(a => lines.includes(a.route)) : raw;
     const base = getStopBase(id);
-    if (!names[base]) names[base] = stationData[base]?.[0] || null;
+    if (!stations[base]) stations[base] = { name: stationData[base]?.[0] || null, routes: stationData[base]?.[1] || [] };
+    const stationRoutes = stationData[base]?.[1] || [];
+    for (const route of (lines ? stationRoutes.filter(r => lines.includes(r)) : stationRoutes)) {
+      relevantRoutes.add(route);
+    }
   }
 
-  res.json({ arrivals, names, lastFetchTime: lastFetchTime?.toISOString() || null });
+  const alerts = {};
+  for (const route of relevantRoutes) {
+    if (alertsCache[route]?.length) alerts[route] = alertsCache[route];
+  }
+
+  res.set('Cache-Control', 'no-store');
+  res.json({ arrivals, stations, alerts, lastFetchTime: lastFetchTime?.toISOString() || null });
 });
 
 // --- Static files ---
@@ -151,8 +235,10 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // --- Start ---
 
-refreshCache();
-setInterval(refreshCache, 60_000);
+refreshArrivals();
+refreshAlerts();
+setInterval(refreshArrivals, 60_000);
+setInterval(refreshAlerts, 3 * 60_000);
 
 app.listen(PORT, () => {
   console.log(`Subway Time server listening on port ${PORT}`);

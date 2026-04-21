@@ -68,6 +68,7 @@
     .row {
       display: none;
       align-items: center;
+      flex-wrap: wrap;
       padding: 3vh 0;
       border-bottom: 2px solid #eee;
     }
@@ -78,6 +79,20 @@
 
     .row.visible {
       display: flex;
+    }
+
+    .alert-text {
+      display: none;
+      width: 100%;
+      padding-top: 1.5vh;
+      font-size: 1.4vw;
+      color: #c00;
+      line-height: 1.4;
+      white-space: pre-line;
+    }
+
+    .alert-text.visible {
+      display: block;
     }
 
     .direction {
@@ -115,6 +130,7 @@
       font-weight: bold;
       color: #fff;
       flex-shrink: 0;
+      position: relative;
     }
 
     /* 1, 2, 3 - Red */
@@ -163,6 +179,25 @@
     /* SI - Blue (Staten Island Railway) */
     .line-badge.SI { background-color: #0039A6; }
 
+    .line-badge.has-alert { cursor: pointer; }
+    .line-badge.has-alert::after {
+      content: '!';
+      position: absolute;
+      top: -0.4vw;
+      right: -0.4vw;
+      width: 2vw;
+      height: 2vw;
+      background: #c00;
+      border-radius: 50%;
+      font-size: 1.2vw;
+      font-weight: bold;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 0.25vw solid #fafafa;
+    }
+
     .time {
       font-size: 8vw;
       font-weight: 600;
@@ -174,6 +209,12 @@
       text-align: center;
       font-size: 1.5vw;
       color: #999;
+    }
+
+    .no-trains {
+      color: #aaa;
+      font-size: 2.5vw;
+      padding: 0.5vw 0;
     }
 
     .loading {
@@ -240,6 +281,20 @@
         font-size: 6vw;
       }
 
+      .line-badge.has-alert::after {
+        top: -0.6vw;
+        right: -0.6vw;
+        width: 3vw;
+        height: 3vw;
+        font-size: 2vw;
+        border-width: 0.4vw;
+      }
+
+      .alert-text {
+        font-size: 3.5vw;
+        padding-top: 2vh;
+      }
+
       .time {
         font-size: 11vw;
       }
@@ -248,6 +303,8 @@
         font-size: 4vw;
         margin-top: 3vh;
       }
+
+      .no-trains { font-size: 5vw; }
 
       .loading {
         font-size: 6vw;
@@ -303,8 +360,9 @@
     function getAllStopIds() {
       const ids = [];
       for (const station of STATIONS) {
-        if (station.stopIds.NORTHBOUND) ids.push(station.stopIds.NORTHBOUND);
-        if (station.stopIds.SOUTHBOUND) ids.push(station.stopIds.SOUTHBOUND);
+        const lineStr = station.lines?.length ? ':' + station.lines.join(';') : '';
+        if (station.stopIds.NORTHBOUND) ids.push(station.stopIds.NORTHBOUND + lineStr);
+        if (station.stopIds.SOUTHBOUND) ids.push(station.stopIds.SOUTHBOUND + lineStr);
       }
       return ids;
     }
@@ -318,14 +376,17 @@
             <div class="row" id="row-${index}-manhattan">
               <div class="direction">Manhattan</div>
               <div class="arrivals" id="arrivals-${index}-manhattan"></div>
+              <div class="alert-text" id="alert-${index}-manhattan"></div>
             </div>
             <div class="row" id="row-${index}-brooklyn">
               <div class="direction">Brooklyn</div>
               <div class="arrivals" id="arrivals-${index}-brooklyn"></div>
+              <div class="alert-text" id="alert-${index}-brooklyn"></div>
             </div>
             <div class="row" id="row-${index}-franklin">
               <div class="direction">Franklin Ave</div>
               <div class="arrivals" id="arrivals-${index}-franklin"></div>
+              <div class="alert-text" id="alert-${index}-franklin"></div>
             </div>
             <div class="updated" id="updated-${index}"></div>
           </div>
@@ -342,7 +403,6 @@
       async function maybeUpdate() {
         if (!lastUpdate || Date.now() - lastUpdate >= REFRESH_INTERVAL) {
           await updateDisplay();
-          lastUpdate = Date.now();
         }
       }
       maybeUpdate();
@@ -362,35 +422,39 @@
         const data = await response.json();
 
         // Resolve station names from API on first load
-        if (data.names) {
+        if (data.stations) {
           STATIONS.forEach((station, index) => {
-            const name = data.names[station.baseId];
-            if (name && !station.stationName) {
-              station.stationName = name;
-              document.getElementById(`title-${index}`).textContent = name;
+            const s = data.stations[station.baseId];
+            if (s?.name && !station.stationName) {
+              station.stationName = s.name;
+              document.getElementById(`title-${index}`).textContent = s.name;
               if (index === 0) {
-                document.title = name;
-                document.querySelector('meta[property="og:title"]').content = name + ' Subway';
+                document.title = s.name;
+                document.querySelector('meta[property="og:title"]').content = s.name + ' Subway';
               }
             }
           });
         }
 
+        lastUpdate = Date.now();
         STATIONS.forEach((station, index) => {
-          updateStation(station, index, data.arrivals);
+          updateStation(station, index, data.arrivals, data.alerts || {}, data.stations || {});
         });
       } catch (err) {
         console.error('Error fetching arrivals:', err);
       }
     }
 
-    function updateStation(station, index, allArrivals) {
+    function updateStation(station, index, allArrivals, alerts, stations) {
       const { stopIds, lines } = station;
       const now = Math.floor(Date.now() / 1000);
 
+      const allStationRoutes = stations[station.baseId]?.routes || [];
+      const stationRoutes = (lines ? allStationRoutes.filter(r => lines.includes(r)) : allStationRoutes)
+        .filter(r => r !== 'S');
+
       function toMinutes(arrivals) {
         return arrivals
-          .filter(a => !lines || lines.includes(a.route))
           .map(a => ({ route: a.route, minutes: Math.floor((a.time - now) / 60) }))
           .filter(a => a.minutes >= 0 && a.minutes < 90);
       }
@@ -408,34 +472,84 @@
         .filter(a => a.route === 'S')
         .sort((a, b) => a.minutes - b.minutes).slice(0, 3);
 
-      renderStation(index, { manhattan, brooklyn, franklin });
+      renderStation(index, { manhattan, brooklyn, franklin }, alerts, {
+        hasManhattan: !!stopIds.NORTHBOUND,
+        hasBrooklyn: !!stopIds.SOUTHBOUND,
+        stationRoutes,
+      });
     }
 
-    function renderRow(rowId, arrivalsId, arrivals) {
+    function renderRow(rowId, arrivalsId, arrivals, alerts, hasStop, stationRoutes = []) {
       const row = document.getElementById(rowId);
       const container = document.getElementById(arrivalsId);
+      const alertEl = document.getElementById(arrivalsId.replace('arrivals-', 'alert-'));
 
-      if (!arrivals || arrivals.length === 0) {
+      if (!hasStop) {
         row.classList.remove('visible');
+        if (alertEl) alertEl.classList.remove('visible');
         return;
       }
 
       row.classList.add('visible');
-      container.innerHTML = arrivals.map(a => `
+
+      const arrivalRoutes = new Set((arrivals || []).map(a => a.route));
+      const alertOnlyRoutes = stationRoutes.filter(r => !arrivalRoutes.has(r) && alerts[r]?.length);
+
+      const arrivalHtml = (arrivals || []).map(a => {
+        const hasAlert = !!alerts[a.route]?.length;
+        return `
+          <div class="arrival">
+            <div class="line-badge ${a.route}${hasAlert ? ' has-alert' : ''}" data-route="${a.route}">${a.route}</div>
+            <div class="time">${a.minutes}</div>
+          </div>`;
+      }).join('');
+
+      const alertOnlyHtml = alertOnlyRoutes.map(r => `
         <div class="arrival">
-          <div class="line-badge ${a.route}">${a.route}</div>
-          <div class="time">${a.minutes}</div>
-        </div>
-      `).join('');
+          <div class="line-badge ${r} has-alert" data-route="${r}">${r}</div>
+          <div class="time">—</div>
+        </div>`).join('');
+
+      const noTrainsHtml = (!arrivals?.length && !alertOnlyRoutes.length)
+        ? '<div class="no-trains">No trains at this time</div>' : '';
+
+      container.innerHTML = arrivalHtml + alertOnlyHtml + noTrainsHtml;
+
+      if (alertEl) {
+        const anyAlerts = arrivals?.some(a => alerts[a.route]?.length) || alertOnlyRoutes.length;
+        if (anyAlerts) {
+          container.querySelectorAll('.has-alert').forEach(badge => {
+            badge.addEventListener('click', () => {
+              const route = badge.dataset.route;
+              const text = (alerts[route] || []).map(a => {
+                const startStr = a.start
+                  ? new Date(a.start * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                  : null;
+                return startStr ? `${a.text} (started ${startStr})` : a.text;
+              }).map(s => `• ${s}`).join('\n');
+              if (alertEl.classList.contains('visible') && alertEl.dataset.route === route) {
+                alertEl.classList.remove('visible');
+              } else {
+                alertEl.textContent = text;
+                alertEl.dataset.route = route;
+                alertEl.classList.add('visible');
+              }
+            });
+          });
+        } else {
+          alertEl.textContent = '';
+          alertEl.classList.remove('visible');
+        }
+      }
     }
 
-    function renderStation(index, data) {
+    function renderStation(index, data, alerts, { hasManhattan, hasBrooklyn, stationRoutes } = {}) {
       document.getElementById(`loading-${index}`).style.display = 'none';
       document.getElementById(`content-${index}`).style.display = 'block';
 
-      renderRow(`row-${index}-manhattan`, `arrivals-${index}-manhattan`, data.manhattan);
-      renderRow(`row-${index}-brooklyn`, `arrivals-${index}-brooklyn`, data.brooklyn);
-      renderRow(`row-${index}-franklin`, `arrivals-${index}-franklin`, data.franklin);
+      renderRow(`row-${index}-manhattan`, `arrivals-${index}-manhattan`, data.manhattan, alerts, hasManhattan, stationRoutes);
+      renderRow(`row-${index}-brooklyn`, `arrivals-${index}-brooklyn`, data.brooklyn, alerts, hasBrooklyn, stationRoutes);
+      renderRow(`row-${index}-franklin`, `arrivals-${index}-franklin`, data.franklin, alerts, false);
 
       document.getElementById(`updated-${index}`).textContent =
         `Updated ${new Date(lastUpdate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
