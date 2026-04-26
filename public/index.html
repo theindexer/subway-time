@@ -52,6 +52,7 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
+      position: relative;
     }
 
     .title {
@@ -73,8 +74,9 @@
       border-bottom: 2px solid #eee;
     }
 
-    .row:last-of-type {
+    .row.visible:not(:has(~ .row.visible)) {
       border-bottom: none;
+      padding-bottom: 0;
     }
 
     .row.visible {
@@ -204,11 +206,26 @@
       color: #222;
     }
 
-    .updated {
-      margin-top: 2vh;
-      text-align: center;
+    #updated-global {
+      position: absolute;
+      top: 3vh;
+      right: 3vw;
       font-size: 1.5vw;
-      color: #999;
+      color: #bbb;
+    }
+
+    .station-divider {
+      font-size: 1.8vw;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.25vw;
+    }
+
+    .station-section ~ .station-section .station-divider {
+      background: #f0f0f0;
+      margin: 2vh -3vw 0;
+      padding: 1vh 3vw;
     }
 
     .no-trains {
@@ -299,9 +316,20 @@
         font-size: 11vw;
       }
 
-      .updated {
+      #updated-global {
+        top: 4vh;
+        right: 5vw;
+        font-size: 3.5vw;
+      }
+
+      .station-divider {
         font-size: 4vw;
-        margin-top: 3vh;
+        letter-spacing: 0.4vw;
+      }
+
+      .station-section ~ .station-section .station-divider {
+        margin: 2vh -5vw 0;
+        padding: 1.2vh 5vw;
       }
 
       .no-trains { font-size: 5vw; }
@@ -367,43 +395,63 @@
       return ids;
     }
 
+    function stationRows(index) {
+      return `
+          <div class="row" id="row-${index}-manhattan">
+            <div class="direction">Manhattan</div>
+            <div class="arrivals" id="arrivals-${index}-manhattan"></div>
+            <div class="alert-text" id="alert-${index}-manhattan"></div>
+          </div>
+          <div class="row" id="row-${index}-brooklyn">
+            <div class="direction">Brooklyn</div>
+            <div class="arrivals" id="arrivals-${index}-brooklyn"></div>
+            <div class="alert-text" id="alert-${index}-brooklyn"></div>
+          </div>
+          <div class="row" id="row-${index}-franklin">
+            <div class="direction">Franklin Ave</div>
+            <div class="arrivals" id="arrivals-${index}-franklin"></div>
+            <div class="alert-text" id="alert-${index}-franklin"></div>
+          </div>
+          <div class="row" id="row-${index}-prospect-park">
+            <div class="direction">Prospect Park</div>
+            <div class="arrivals" id="arrivals-${index}-prospect-park"></div>
+            <div class="alert-text" id="alert-${index}-prospect-park"></div>
+          </div>`;
+    }
+
     function createStationCard(station, index) {
       const name = station.stationName || station.baseId;
       return `
         <div class="card" id="card-${index}">
+          <div id="updated-global"></div>
           <h1 class="title" id="title-${index}">${name}</h1>
           <div class="content" id="content-${index}" style="display: none;">
-            <div class="row" id="row-${index}-manhattan">
-              <div class="direction">Manhattan</div>
-              <div class="arrivals" id="arrivals-${index}-manhattan"></div>
-              <div class="alert-text" id="alert-${index}-manhattan"></div>
-            </div>
-            <div class="row" id="row-${index}-brooklyn">
-              <div class="direction">Brooklyn</div>
-              <div class="arrivals" id="arrivals-${index}-brooklyn"></div>
-              <div class="alert-text" id="alert-${index}-brooklyn"></div>
-            </div>
-            <div class="row" id="row-${index}-franklin">
-              <div class="direction">Franklin Ave</div>
-              <div class="arrivals" id="arrivals-${index}-franklin"></div>
-              <div class="alert-text" id="alert-${index}-franklin"></div>
-            </div>
-            <div class="row" id="row-${index}-prospect-park">
-              <div class="direction">Prospect Park</div>
-              <div class="arrivals" id="arrivals-${index}-prospect-park"></div>
-              <div class="alert-text" id="alert-${index}-prospect-park"></div>
-            </div>
-            <div class="updated" id="updated-${index}"></div>
+            ${stationRows(index)}
           </div>
           <div id="loading-${index}" class="loading">Loading...</div>
-        </div>
-      `;
+        </div>`;
+    }
+
+    function createStationSection(station, index) {
+      const name = station.stationName || station.baseId;
+      return `
+        <div class="station-section" id="card-${index}">
+          <div class="station-divider" id="title-${index}">${name}</div>
+          <div class="content" id="content-${index}" style="display: none;">
+            ${stationRows(index)}
+          </div>
+          <div id="loading-${index}" class="loading">Loading...</div>
+        </div>`;
     }
 
     function init() {
       const container = document.getElementById('cards-container');
-      container.innerHTML = STATIONS.map((station, i) => createStationCard(station, i)).join('')
-        + '<div style="text-align:center;padding-top:1vh;font-size:1.2vw;color:#ccc"><a href="/builder.html" style="color:inherit;text-decoration:underline;text-underline-offset:3px">build a url</a></div>';
+      const builderLink = '<div style="text-align:center;padding-top:1vh;font-size:1.2vw;color:#ccc"><a href="/builder.html" style="color:inherit;text-decoration:underline;text-underline-offset:3px">build a url</a></div>';
+      if (STATIONS.length === 1) {
+        container.innerHTML = createStationCard(STATIONS[0], 0) + builderLink;
+      } else {
+        container.innerHTML = `<div class="card"><div id="updated-global"></div>${STATIONS.map((s, i) => createStationSection(s, i)).join('')}</div>` + builderLink;
+      }
 
       async function maybeUpdate() {
         if (!lastUpdate || Date.now() - lastUpdate >= REFRESH_INTERVAL) {
@@ -567,7 +615,7 @@
       renderRow(`row-${index}-franklin`, `arrivals-${index}-franklin`, data.franklin, alerts, data.franklin?.length > 0);
       renderRow(`row-${index}-prospect-park`, `arrivals-${index}-prospect-park`, data.prospectPark, alerts, data.prospectPark?.length > 0);
 
-      document.getElementById(`updated-${index}`).textContent =
+      document.getElementById('updated-global').textContent =
         `Updated ${new Date(lastUpdate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
     }
 
