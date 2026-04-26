@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta property="og:title" content="Prospect Park Subway">
+  <meta property="og:title" content="Subway Time">
   <meta property="og:description" content="Real-time B, Q, S train arrivals">
   <meta property="og:image" content="https://subway-time.netlify.app/og-image.png">
   <meta property="og:url" content="https://subway-time.netlify.app/">
@@ -13,7 +13,7 @@
   <link rel="icon" type="image/svg+xml" href="mta-icon.svg">
   <link rel="icon" type="image/png" href="mta-icon.png">
   <link rel="apple-touch-icon" href="mta-icon.png">
-  <title>Prospect Park</title>
+  <title>Subway Time</title>
   <style>
     * {
       margin: 0;
@@ -388,6 +388,11 @@
               <div class="arrivals" id="arrivals-${index}-franklin"></div>
               <div class="alert-text" id="alert-${index}-franklin"></div>
             </div>
+            <div class="row" id="row-${index}-prospect-park">
+              <div class="direction">Prospect Park</div>
+              <div class="arrivals" id="arrivals-${index}-prospect-park"></div>
+              <div class="alert-text" id="alert-${index}-prospect-park"></div>
+            </div>
             <div class="updated" id="updated-${index}"></div>
           </div>
           <div id="loading-${index}" class="loading">Loading...</div>
@@ -423,17 +428,34 @@
 
         // Resolve station names from API on first load
         if (data.stations) {
+          let titleNeedsUpdate = false;
           STATIONS.forEach((station, index) => {
             const s = data.stations[station.baseId];
             if (s?.name && !station.stationName) {
               station.stationName = s.name;
               document.getElementById(`title-${index}`).textContent = s.name;
-              if (index === 0) {
-                document.title = s.name;
-                document.querySelector('meta[property="og:title"]').content = s.name + ' Subway';
-              }
+              titleNeedsUpdate = true;
             }
           });
+          if (titleNeedsUpdate) {
+            let pageTitle;
+            if (STATIONS.length === 1) {
+              pageTitle = STATIONS[0].stationName;
+            } else {
+              const lines = new Set();
+              STATIONS.forEach(station => {
+                const s = data.stations[station.baseId];
+                const routes = (s?.routes || []);
+                const filtered = station.lines?.length ? routes.filter(r => station.lines.includes(r)) : routes;
+                filtered.forEach(r => lines.add(r));
+              });
+              pageTitle = lines.size > 0 ? [...lines].join(' ') : 'Subway Time';
+            }
+            if (pageTitle) {
+              document.title = pageTitle;
+              document.querySelector('meta[property="og:title"]').content = pageTitle + ' Subway';
+            }
+          }
         }
 
         lastUpdate = Date.now();
@@ -450,8 +472,7 @@
       const now = Math.floor(Date.now() / 1000);
 
       const allStationRoutes = stations[station.baseId]?.routes || [];
-      const stationRoutes = (lines ? allStationRoutes.filter(r => lines.includes(r)) : allStationRoutes)
-        .filter(r => r !== 'S');
+      const stationRoutes = lines ? allStationRoutes.filter(r => lines.includes(r)) : allStationRoutes;
 
       function toMinutes(arrivals) {
         return arrivals
@@ -462,6 +483,8 @@
       const northArrivals = stopIds.NORTHBOUND ? toMinutes(allArrivals[stopIds.NORTHBOUND] || []) : [];
       const southArrivals = stopIds.SOUTHBOUND ? toMinutes(allArrivals[stopIds.SOUTHBOUND] || []) : [];
 
+      const hasNonS = stationRoutes.some(r => r !== 'S');
+
       const manhattan = northArrivals
         .filter(a => a.route !== 'S')
         .sort((a, b) => a.minutes - b.minutes).slice(0, 3);
@@ -471,15 +494,17 @@
       const franklin = northArrivals
         .filter(a => a.route === 'S')
         .sort((a, b) => a.minutes - b.minutes).slice(0, 3);
+      const prospectPark = southArrivals
+        .filter(a => a.route === 'S')
+        .sort((a, b) => a.minutes - b.minutes).slice(0, 3);
 
-      renderStation(index, { manhattan, brooklyn, franklin }, alerts, {
-        hasManhattan: !!stopIds.NORTHBOUND,
-        hasBrooklyn: !!stopIds.SOUTHBOUND,
-        stationRoutes,
+      renderStation(index, { manhattan, brooklyn, franklin, prospectPark }, alerts, {
+        hasManhattan: !!stopIds.NORTHBOUND && hasNonS,
+        hasBrooklyn: !!stopIds.SOUTHBOUND && hasNonS,
       });
     }
 
-    function renderRow(rowId, arrivalsId, arrivals, alerts, hasStop, stationRoutes = []) {
+    function renderRow(rowId, arrivalsId, arrivals, alerts, hasStop) {
       const row = document.getElementById(rowId);
       const container = document.getElementById(arrivalsId);
       const alertEl = document.getElementById(arrivalsId.replace('arrivals-', 'alert-'));
@@ -492,9 +517,6 @@
 
       row.classList.add('visible');
 
-      const arrivalRoutes = new Set((arrivals || []).map(a => a.route));
-      const alertOnlyRoutes = stationRoutes.filter(r => !arrivalRoutes.has(r) && alerts[r]?.length);
-
       const arrivalHtml = (arrivals || []).map(a => {
         const hasAlert = !!alerts[a.route]?.length;
         return `
@@ -504,19 +526,12 @@
           </div>`;
       }).join('');
 
-      const alertOnlyHtml = alertOnlyRoutes.map(r => `
-        <div class="arrival">
-          <div class="line-badge ${r} has-alert" data-route="${r}">${r}</div>
-          <div class="time">—</div>
-        </div>`).join('');
+      const noTrainsHtml = !arrivals?.length ? '<div class="no-trains">No trains at this time</div>' : '';
 
-      const noTrainsHtml = (!arrivals?.length && !alertOnlyRoutes.length)
-        ? '<div class="no-trains">No trains at this time</div>' : '';
-
-      container.innerHTML = arrivalHtml + alertOnlyHtml + noTrainsHtml;
+      container.innerHTML = arrivalHtml + noTrainsHtml;
 
       if (alertEl) {
-        const anyAlerts = arrivals?.some(a => alerts[a.route]?.length) || alertOnlyRoutes.length;
+        const anyAlerts = arrivals?.some(a => alerts[a.route]?.length);
         if (anyAlerts) {
           container.querySelectorAll('.has-alert').forEach(badge => {
             badge.addEventListener('click', () => {
@@ -543,13 +558,14 @@
       }
     }
 
-    function renderStation(index, data, alerts, { hasManhattan, hasBrooklyn, stationRoutes } = {}) {
+    function renderStation(index, data, alerts, { hasManhattan, hasBrooklyn } = {}) {
       document.getElementById(`loading-${index}`).style.display = 'none';
       document.getElementById(`content-${index}`).style.display = 'block';
 
-      renderRow(`row-${index}-manhattan`, `arrivals-${index}-manhattan`, data.manhattan, alerts, hasManhattan, stationRoutes);
-      renderRow(`row-${index}-brooklyn`, `arrivals-${index}-brooklyn`, data.brooklyn, alerts, hasBrooklyn, stationRoutes);
-      renderRow(`row-${index}-franklin`, `arrivals-${index}-franklin`, data.franklin, alerts, false);
+      renderRow(`row-${index}-manhattan`, `arrivals-${index}-manhattan`, data.manhattan, alerts, hasManhattan);
+      renderRow(`row-${index}-brooklyn`, `arrivals-${index}-brooklyn`, data.brooklyn, alerts, hasBrooklyn);
+      renderRow(`row-${index}-franklin`, `arrivals-${index}-franklin`, data.franklin, alerts, data.franklin?.length > 0);
+      renderRow(`row-${index}-prospect-park`, `arrivals-${index}-prospect-park`, data.prospectPark, alerts, data.prospectPark?.length > 0);
 
       document.getElementById(`updated-${index}`).textContent =
         `Updated ${new Date(lastUpdate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
