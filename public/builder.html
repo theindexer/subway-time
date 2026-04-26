@@ -373,6 +373,35 @@
       document.getElementById('open-btn').disabled = !url;
     }
 
+    // --- Pre-populate from URL ---
+
+    (function initFromUrl() {
+      const param = new URLSearchParams(window.location.search).get('station');
+      if (!param) return;
+      param.split(',').forEach(s => {
+        s = s.trim();
+        const [stationPart, linesStr] = s.split(':');
+        const lineFilter = linesStr ? linesStr.split(';').map(l => l.trim().toUpperCase()) : [];
+        const lastChar = stationPart.slice(-1).toUpperCase();
+        let baseId, dir;
+        if (lastChar === 'N') {
+          baseId = stationPart.slice(0, -1).toUpperCase();
+          dir = 'N';
+        } else if (lastChar === 'S') {
+          baseId = stationPart.slice(0, -1).toUpperCase();
+          dir = 'S';
+        } else {
+          baseId = stationPart.toUpperCase();
+          dir = 'both';
+        }
+        if (!window.stationData[baseId]) return;
+        addStation(baseId);
+        const entry = selected.find(e => e.id === baseId);
+        if (entry) { entry.dir = dir; entry.lineFilter = lineFilter; }
+      });
+      if (selected.length) render();
+    })();
+
     // --- Output actions ---
 
     document.getElementById('copy-btn').addEventListener('click', () => {

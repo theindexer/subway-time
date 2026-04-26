@@ -234,6 +234,19 @@
       padding: 0.5vw 0;
     }
 
+    .builder-link {
+      text-align: center;
+      padding-top: 1vh;
+      font-size: 1.2vw;
+      color: #ccc;
+    }
+
+    .builder-link a {
+      color: inherit;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
     .loading {
       text-align: center;
       padding: 10vh;
@@ -334,6 +347,8 @@
 
       .no-trains { font-size: 5vw; }
 
+      .builder-link { font-size: 4vw; }
+
       .loading {
         font-size: 6vw;
       }
@@ -395,6 +410,11 @@
       return ids;
     }
 
+    function stationDisplayName(station) {
+      const base = station.stationName || station.baseId;
+      return station.lines?.length ? `${base} (${station.lines.join(' ')})` : base;
+    }
+
     function stationRows(index) {
       return `
           <div class="row" id="row-${index}-manhattan">
@@ -420,11 +440,10 @@
     }
 
     function createStationCard(station, index) {
-      const name = station.stationName || station.baseId;
       return `
         <div class="card" id="card-${index}">
           <div id="updated-global"></div>
-          <h1 class="title" id="title-${index}">${name}</h1>
+          <h1 class="title" id="title-${index}">${stationDisplayName(station)}</h1>
           <div class="content" id="content-${index}" style="display: none;">
             ${stationRows(index)}
           </div>
@@ -433,10 +452,9 @@
     }
 
     function createStationSection(station, index) {
-      const name = station.stationName || station.baseId;
       return `
         <div class="station-section" id="card-${index}">
-          <div class="station-divider" id="title-${index}">${name}</div>
+          <div class="station-divider" id="title-${index}">${stationDisplayName(station)}</div>
           <div class="content" id="content-${index}" style="display: none;">
             ${stationRows(index)}
           </div>
@@ -446,7 +464,7 @@
 
     function init() {
       const container = document.getElementById('cards-container');
-      const builderLink = '<div style="text-align:center;padding-top:1vh;font-size:1.2vw;color:#ccc"><a href="/builder.html" style="color:inherit;text-decoration:underline;text-underline-offset:3px">build a url</a></div>';
+      const builderLink = `<div class="builder-link"><a href="/builder.html${window.location.search}">build a url</a></div>`;
       if (STATIONS.length === 1) {
         container.innerHTML = createStationCard(STATIONS[0], 0) + builderLink;
       } else {
@@ -481,7 +499,7 @@
             const s = data.stations[station.baseId];
             if (s?.name && !station.stationName) {
               station.stationName = s.name;
-              document.getElementById(`title-${index}`).textContent = s.name;
+              document.getElementById(`title-${index}`).textContent = stationDisplayName(station);
               titleNeedsUpdate = true;
             }
           });
