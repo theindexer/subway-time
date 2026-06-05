@@ -4,6 +4,7 @@ const protobuf = require("protobufjs");
 const path = require("path");
 
 const stationData = require("./public/station-data");
+const stationCoords = require("./public/station-coords");
 
 const app = express();
 app.use(compression());
@@ -193,6 +194,28 @@ async function refreshAlerts() {
 }
 
 // --- API ---
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+app.get("/api/nearest", (req, res) => {
+  const lat = parseFloat(req.query.lat);
+  const lon = parseFloat(req.query.lon);
+  if (isNaN(lat) || isNaN(lon)) return res.status(400).json({ error: "lat and lon required" });
+
+  const ranked = Object.entries(stationCoords)
+    .map(([id, [sLat, sLon]]) => ({ id, dist: haversineKm(lat, lon, sLat, sLon) }))
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, 5);
+
+  res.json(ranked.map(({ id }) => ({ stationId: id, name: stationData[id]?.[0] || id })));
+});
 
 function getStopBase(stopId) {
   const lastChar = stopId.slice(-1);

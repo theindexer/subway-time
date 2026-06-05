@@ -3,7 +3,8 @@
   "version": "2.0.0",
   "private": true,
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "fetch-coords": "python3 scripts/fetch-coords.py"
   },
   "dependencies": {
     "compression": "^1.7.5",

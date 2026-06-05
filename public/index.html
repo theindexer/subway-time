@@ -247,6 +247,24 @@
       text-underline-offset: 3px;
     }
 
+    #locate-btn {
+      display: block;
+      margin: 0 auto;
+      padding: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #ccc;
+      font-size: 1.2vw;
+      font-family: inherit;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    #locate-btn:disabled {
+      cursor: default;
+    }
+
     .loading {
       text-align: center;
       padding: 10vh;
@@ -348,6 +366,7 @@
       .no-trains { font-size: 5vw; }
 
       .builder-link { font-size: 4vw; }
+      #locate-btn { font-size: 4vw; }
 
       .loading {
         font-size: 6vw;
@@ -462,13 +481,39 @@
         </div>`;
     }
 
+    function locateNearest() {
+      const btn = document.getElementById('locate-btn');
+      btn.disabled = true;
+      btn.textContent = 'locating…';
+      navigator.geolocation.getCurrentPosition(
+        async ({ coords }) => {
+          try {
+            const res = await fetch(`/api/nearest?lat=${coords.latitude}&lon=${coords.longitude}`);
+            if (!res.ok) throw new Error('request failed');
+            const stations = await res.json();
+            const param = stations.map(s => s.stationId).join(',');
+            window.location.href = `/?station=${param}`;
+          } catch {
+            btn.disabled = false;
+            btn.textContent = 'nearest stations';
+          }
+        },
+        () => {
+          btn.disabled = false;
+          btn.textContent = 'nearest stations';
+        },
+        { timeout: 10000, maximumAge: 60000 }
+      );
+    }
+
     function init() {
       const container = document.getElementById('cards-container');
+      const locateBtn = `<button id="locate-btn" onclick="locateNearest()">nearest stations</button>`;
       const builderLink = `<div class="builder-link"><a href="/builder.html${window.location.search}">build a url</a></div>`;
       if (STATIONS.length === 1) {
-        container.innerHTML = createStationCard(STATIONS[0], 0) + builderLink;
+        container.innerHTML = createStationCard(STATIONS[0], 0) + locateBtn + builderLink;
       } else {
-        container.innerHTML = `<div class="card"><div id="updated-global"></div>${STATIONS.map((s, i) => createStationSection(s, i)).join('')}</div>` + builderLink;
+        container.innerHTML = `<div class="card"><div id="updated-global"></div>${STATIONS.map((s, i) => createStationSection(s, i)).join('')}</div>` + locateBtn + builderLink;
       }
 
       async function maybeUpdate() {
