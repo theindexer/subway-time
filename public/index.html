@@ -118,7 +118,39 @@
       display: flex;
       align-items: center;
       gap: 1vw;
-      width: 23vw;
+      width: 22vw;
+    }
+
+    .chevron-btn, .chevron-placeholder {
+      width: 2.5vw;
+      height: 2.5vw;
+      min-width: 28px;
+      min-height: 28px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .chevron-btn {
+      background: none;
+      border: 1px solid #e0e0e0;
+      border-radius: 50%;
+      cursor: pointer;
+      color: #999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.3vw;
+      transition: all 0.15s ease;
+    }
+
+    .chevron-btn:hover {
+      color: #222;
+      border-color: #aaa;
+      background: #f0f0f0;
+    }
+
+    .chevron-btn:active {
+      transform: scale(0.9);
     }
 
     .line-badge {
@@ -341,14 +373,23 @@
       }
 
       .arrival {
-        width: 27vw;
-        gap: 2vw;
+        width: 24.5vw;
+        gap: 1.5vw;
+      }
+
+      .chevron-btn, .chevron-placeholder {
+        width: 6.5vw;
+        height: 6.5vw;
+        min-width: 24px;
+        min-height: 24px;
+        margin-left: auto;
+        padding: 0.5vw;
       }
 
       .line-badge {
-        width: 10vw;
-        height: 10vw;
-        font-size: 6vw;
+        width: 9vw;
+        height: 9vw;
+        font-size: 5.5vw;
       }
 
       .line-badge.has-alert::after {
@@ -366,7 +407,7 @@
       }
 
       .time {
-        font-size: 11vw;
+        font-size: 10vw;
       }
 
       #updated-global {
@@ -652,22 +693,25 @@
 
       const manhattan = northArrivals
         .filter(a => a.route !== 'S')
-        .sort((a, b) => a.minutes - b.minutes).slice(0, 3);
+        .sort((a, b) => a.minutes - b.minutes).slice(0, 6);
       const brooklyn = southArrivals
         .filter(a => a.route !== 'S')
-        .sort((a, b) => a.minutes - b.minutes).slice(0, 3);
+        .sort((a, b) => a.minutes - b.minutes).slice(0, 6);
       const franklin = northArrivals
         .filter(a => a.route === 'S')
-        .sort((a, b) => a.minutes - b.minutes).slice(0, 3);
+        .sort((a, b) => a.minutes - b.minutes).slice(0, 6);
       const prospectPark = southArrivals
         .filter(a => a.route === 'S')
-        .sort((a, b) => a.minutes - b.minutes).slice(0, 3);
+        .sort((a, b) => a.minutes - b.minutes).slice(0, 6);
 
       renderStation(index, { manhattan, brooklyn, franklin, prospectPark }, alerts, {
         hasManhattan: !!stopIds.NORTHBOUND && hasNonS,
         hasBrooklyn: !!stopIds.SOUTHBOUND && hasNonS,
       });
     }
+
+    const rowPages = {};
+    const rowData = {};
 
     function renderRow(rowId, arrivalsId, arrivals, alerts, hasStop) {
       const row = document.getElementById(rowId);
@@ -681,8 +725,18 @@
       }
 
       row.classList.add('visible');
+      rowData[rowId] = { arrivalsId, arrivals, alerts, hasStop };
 
-      const arrivalHtml = (arrivals || []).map(a => {
+      const total = arrivals?.length || 0;
+      let page = rowPages[rowId] || 0;
+      if (page === 1 && total <= 3) {
+        page = 0;
+        rowPages[rowId] = 0;
+      }
+
+      const displayArrivals = (arrivals || []).slice(page * 3, (page + 1) * 3);
+
+      const arrivalHtml = displayArrivals.map(a => {
         const hasAlert = !!alerts[a.route]?.length;
         return `
           <div class="arrival">
@@ -691,12 +745,45 @@
           </div>`;
       }).join('');
 
-      const noTrainsHtml = !arrivals?.length ? '<div class="no-trains">No trains at this time</div>' : '';
+      const noTrainsHtml = !total ? '<div class="no-trains">No trains at this time</div>' : '';
 
-      container.innerHTML = arrivalHtml + noTrainsHtml;
+      let chevronHtml = '';
+      if (total > 3) {
+        if (page === 0) {
+          chevronHtml = `
+            <button class="chevron-btn" data-row="${rowId}" data-page="1" title="Later trains" aria-label="Later trains">
+              <svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>`;
+        } else {
+          chevronHtml = `
+            <button class="chevron-btn" data-row="${rowId}" data-page="0" title="Earlier trains" aria-label="Earlier trains">
+              <svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>`;
+        }
+      } else {
+        chevronHtml = '<div class="chevron-placeholder"></div>';
+      }
+
+      container.innerHTML = arrivalHtml + noTrainsHtml + chevronHtml;
+
+      const chevronBtn = container.querySelector('.chevron-btn');
+      if (chevronBtn) {
+        chevronBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          rowPages[rowId] = parseInt(chevronBtn.dataset.page, 10);
+          const data = rowData[rowId];
+          if (data) {
+            renderRow(rowId, data.arrivalsId, data.arrivals, data.alerts, data.hasStop);
+          }
+        });
+      }
 
       if (alertEl) {
-        const anyAlerts = arrivals?.some(a => alerts[a.route]?.length);
+        const anyAlerts = displayArrivals.some(a => alerts[a.route]?.length);
         if (anyAlerts) {
           container.querySelectorAll('.has-alert').forEach(badge => {
             badge.addEventListener('click', () => {
