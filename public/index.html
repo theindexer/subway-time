@@ -248,21 +248,43 @@
     }
 
     #locate-btn {
-      display: block;
-      margin: 0 auto;
-      padding: 0;
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 40px;
+      height: 40px;
+      padding: 8px;
       background: none;
       border: none;
       cursor: pointer;
-      color: #ccc;
-      font-size: 1.2vw;
-      font-family: inherit;
-      text-decoration: underline;
-      text-underline-offset: 3px;
+      color: #aaa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      transition: color 0.15s ease, transform 0.15s ease;
+    }
+
+    #locate-btn:hover {
+      color: #333;
+    }
+
+    #locate-btn:active {
+      transform: scale(0.9);
     }
 
     #locate-btn:disabled {
       cursor: default;
+      opacity: 0.5;
+    }
+
+    #locate-btn.locating svg {
+      animation: locate-spin 1s linear infinite;
+    }
+
+    @keyframes locate-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
 
     .loading {
@@ -366,7 +388,13 @@
       .no-trains { font-size: 5vw; }
 
       .builder-link { font-size: 4vw; }
-      #locate-btn { font-size: 4vw; }
+      #locate-btn {
+        top: max(12px, env(safe-area-inset-top));
+        right: max(12px, env(safe-area-inset-right));
+        width: 40px;
+        height: 40px;
+        padding: 8px;
+      }
 
       .loading {
         font-size: 6vw;
@@ -379,6 +407,16 @@
   </style>
 </head>
 <body>
+  <button id="locate-btn" onclick="locateNearest()" title="Find nearest stations" aria-label="Find nearest stations">
+    <svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="7"></circle>
+      <line x1="12" y1="1" x2="12" y2="5"></line>
+      <line x1="12" y1="19" x2="12" y2="23"></line>
+      <line x1="1" y1="12" x2="5" y2="12"></line>
+      <line x1="19" y1="12" x2="23" y2="12"></line>
+      <circle cx="12" cy="12" r="2" fill="currentColor"></circle>
+    </svg>
+  </button>
   <div id="cards-container"></div>
 
   <script>
@@ -481,10 +519,29 @@
         </div>`;
     }
 
-    function locateNearest() {
+    function setLocating(locating) {
       const btn = document.getElementById('locate-btn');
-      btn.disabled = true;
-      btn.textContent = 'locating…';
+      if (!btn) return;
+      btn.disabled = locating;
+      if (locating) {
+        btn.classList.add('locating');
+        btn.setAttribute('title', 'Locating…');
+        btn.setAttribute('aria-label', 'Locating nearest stations…');
+      } else {
+        btn.classList.remove('locating');
+        btn.setAttribute('title', 'Find nearest stations');
+        btn.setAttribute('aria-label', 'Find nearest stations');
+      }
+    }
+
+    window.addEventListener('pageshow', (e) => {
+      if (e.persisted) {
+        setLocating(false);
+      }
+    });
+
+    function locateNearest() {
+      setLocating(true);
       navigator.geolocation.getCurrentPosition(
         async ({ coords }) => {
           try {
@@ -494,13 +551,11 @@
             const param = stations.map(s => s.stationId).join(',');
             window.location.href = `/?station=${param}`;
           } catch {
-            btn.disabled = false;
-            btn.textContent = 'nearest stations';
+            setLocating(false);
           }
         },
         () => {
-          btn.disabled = false;
-          btn.textContent = 'nearest stations';
+          setLocating(false);
         },
         { timeout: 10000, maximumAge: 60000 }
       );
@@ -508,12 +563,11 @@
 
     function init() {
       const container = document.getElementById('cards-container');
-      const locateBtn = `<button id="locate-btn" onclick="locateNearest()">nearest stations</button>`;
       const builderLink = `<div class="builder-link"><a href="/builder.html${window.location.search}">build a url</a></div>`;
       if (STATIONS.length === 1) {
-        container.innerHTML = createStationCard(STATIONS[0], 0) + locateBtn + builderLink;
+        container.innerHTML = createStationCard(STATIONS[0], 0) + builderLink;
       } else {
-        container.innerHTML = `<div class="card"><div id="updated-global"></div>${STATIONS.map((s, i) => createStationSection(s, i)).join('')}</div>` + locateBtn + builderLink;
+        container.innerHTML = `<div class="card"><div id="updated-global"></div>${STATIONS.map((s, i) => createStationSection(s, i)).join('')}</div>` + builderLink;
       }
 
       async function maybeUpdate() {
