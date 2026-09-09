@@ -257,6 +257,20 @@ app.get("/api/arrivals", (req, res) => {
   res.json({ arrivals, stations, alerts, lastFetchTime: lastFetchTime?.toISOString() || null });
 });
 
+app.get(["/nearby", "/nearby.html"], (req, res) => {
+  const lat = parseFloat(req.query.lat);
+  const lon = parseFloat(req.query.lon);
+  if (!isNaN(lat) && !isNaN(lon)) {
+    const ranked = Object.entries(stationCoords)
+      .map(([id, [sLat, sLon]]) => ({ id, dist: haversineKm(lat, lon, sLat, sLon) }))
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 5);
+    const param = ranked.map(s => s.id).join(",");
+    return res.redirect(`/?station=${param}`);
+  }
+  res.sendFile(path.join(__dirname, "public", "nearby.html"));
+});
+
 // --- Static files ---
 
 app.use(express.static(path.join(__dirname, "public")));
